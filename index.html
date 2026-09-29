@@ -1,159 +1,175 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 猜拳機控制後台</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #222; color: white; text-align: center; margin: 0; padding: 20px; }
-        .card { background: #333; padding: 20px; border-radius: 15px; margin: 20px auto; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        button { background: #4CAF50; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; margin: 5px; transition: 0.3s; }
-        button:hover { background: #45a049; }
-        input[type="number"] { width: 60px; padding: 5px; border-radius: 5px; border: none; text-align: center; }
-        hr { border-color: #555; margin: 20px 0; }
-        
-        /* 猜拳動畫區域 */
-        #hand-display { font-size: 80px; margin: 20px 0; display: inline-block; }
-        .shake-animation { animation: shake 0.6s infinite; }
-        
-        @keyframes shake {
-            0% { transform: translateY(0px) rotate(0deg); }
-            25% { transform: translateY(-20px) rotate(-10deg); }
-            50% { transform: translateY(0px) rotate(0deg); }
-            75% { transform: translateY(-20px) rotate(10deg); }
-            100% { transform: translateY(0px) rotate(0deg); }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>猜拳機器人控制台</title>
+<style>
+:root{--bg:#eef2e6;--ink:#1f2a44;--card:#fbfcf7;--line:#cdd6bd;--S:#e8505b;--R:#2f6fed;--P:#e9a820;--mute:#6b7690}
+@media (prefers-color-scheme:dark){:root{--bg:#161c2c;--ink:#eef2e6;--card:#20283c;--line:#34405c;--mute:#9aa6c2}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;padding:16px;max-width:520px;margin-inline:auto}
+h1{font-size:20px;margin:4px 0 12px;display:flex;justify-content:space-between;align-items:center}
+.dot{width:10px;height:10px;border-radius:50%;background:#aaa;display:inline-block;margin-right:6px}
+.on .dot{background:#2dbe60}
+button{font:inherit;color:inherit;border:2px solid var(--ink);background:var(--card);border-radius:12px;padding:10px 14px;cursor:pointer}
+button:active{transform:translateY(1px)}
+button.pri{background:var(--ink);color:var(--bg)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--R);outline-offset:2px}
+.card{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.stage{text-align:center;padding:20px 8px}
+#hand{font-size:110px;line-height:1.1;display:inline-block;filter:drop-shadow(0 6px 0 rgba(0,0,0,.12))}
+#hand.shake{animation:shake .5s ease-in-out infinite}
+#hand.pop{animation:pop .6s cubic-bezier(.2,1.6,.4,1)}
+@keyframes shake{0%,100%{transform:translateY(0) rotate(-8deg)}50%{transform:translateY(-28px) rotate(8deg)}}
+@keyframes pop{0%{transform:scale(.3) rotate(-30deg)}100%{transform:scale(1) rotate(0)}}
+.stage.S{box-shadow:inset 0 0 0 3px var(--S)}.stage.R{box-shadow:inset 0 0 0 3px var(--R)}.stage.P{box-shadow:inset 0 0 0 3px var(--P)}
+.stage{border-radius:16px;transition:box-shadow .3s}
+#state{font-size:17px;font-weight:700;min-height:26px}
+.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;margin-top:10px}
+.meta b{display:block;font-size:20px}.meta span{font-size:12px;color:var(--mute)}
+h2{font-size:15px;margin:0 0 10px}
+.seg{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.seg button.act{background:var(--ink);color:var(--bg)}
+.pick{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.pick button{font-size:30px;padding:8px}
+.pick button.act{border-width:4px}
+.pick [data-m=S].act{border-color:var(--S)}.pick [data-m=R].act{border-color:var(--R)}.pick [data-m=P].act{border-color:var(--P)}
+.row{display:grid;grid-template-columns:32px 1fr 44px;gap:8px;align-items:center;margin:8px 0}
+input[type=range]{width:100%}
+.hist{display:flex;gap:6px;flex-wrap:wrap;font-size:26px;min-height:34px}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:8px;background:var(--line)}
+.bar i{display:block;transition:width .4s}
+small{color:var(--mute)}
+</style>
 </head>
 <body>
+<h1><span id="conn"><span class="dot"></span><span id="connTxt">未連線</span></span>
+<button class="pri" id="btnConn">連接藍芽</button></h1>
 
-    <h1>🤖 ESP32 猜拳機控制面板</h1>
-    
-    <div class="card">
-        <button id="connectBtn">連接藍牙設備</button>
-        <p id="status">狀態：未連接</p>
-    </div>
+<div class="card stage" id="stage">
+  <div id="hand">✊</div>
+  <div id="state">尚未連線</div>
+  <div class="meta">
+    <div><b id="dist">--</b><span>距離 cm</span></div>
+    <div><b id="angle">--</b><span>馬達角度</span></div>
+    <div><b id="rounds">0</b><span>出拳次數</span></div>
+  </div>
+</div>
 
-    <div class="card">
-        <h3>當前狀態</h3>
-        <div id="hand-display">✊</div>
-        <h2 id="result-text">等待玩家出拳...</h2>
-    </div>
+<div class="card">
+  <h2>目前設定</h2>
+  <div id="summary">--</div>
+  <div class="bar"><i id="b0" style="background:var(--S)"></i><i id="b1" style="background:var(--R)"></i><i id="b2" style="background:var(--P)"></i></div>
+  <small id="counts">累計：✌️ 0　✊ 0　✋ 0</small>
+  <div class="hist" id="hist"></div>
+</div>
 
-    <div class="card">
-        <h3>後台控制</h3>
-        <p>強制出拳：</p>
-        <button onclick="sendCommand('FORCE:0')">✌️ 必出剪刀</button>
-        <button onclick="sendCommand('FORCE:90')">✊ 必出石頭</button>
-        <button onclick="sendCommand('FORCE:180')">🖐️ 必出布</button>
-        <button onclick="sendCommand('FORCE:-1')" style="background: #2196F3;">🎲 恢復隨機</button>
+<div class="card">
+  <h2>出拳模式</h2>
+  <div class="seg">
+    <button id="mRandom">🎲 隨機（依機率）</button>
+    <button id="mForce">📌 指定出拳</button>
+  </div>
+  <div class="pick" id="pick">
+    <button data-m="S">✌️</button><button data-m="R">✊</button><button data-m="P">✋</button>
+  </div>
+</div>
 
-        <hr>
-        
-        <p>隨機機率設定 (%)：</p>
-        剪刀: <input type="number" id="pS" value="33">
-        石頭: <input type="number" id="pR" value="33">
-        布: <input type="number" id="pP" value="34">
-        <br><br>
-        <button onclick="setProbabilities()" style="background: #FF9800;">設定機率</button>
-    </div>
+<div class="card">
+  <h2>隨機機率</h2>
+  <div class="row"><span>✌️</span><input type="range" id="p0" min="0" max="100" value="33"><b id="v0">33</b></div>
+  <div class="row"><span>✊</span><input type="range" id="p1" min="0" max="100" value="34"><b id="v1">34</b></div>
+  <div class="row"><span>✋</span><input type="range" id="p2" min="0" max="100" value="33"><b id="v2">33</b></div>
+  <small>滑桿數值為權重，送出後會自動換算成百分比。</small>
+  <div class="seg" style="margin-top:10px">
+    <button id="pReset">平均</button><button class="pri" id="pApply">套用機率</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>偵測距離：<span id="thv">20</span> cm</h2>
+  <input type="range" id="th" min="5" max="60" value="20">
+  <button id="play" style="width:100%;margin-top:10px">👊 手動出拳</button>
+</div>
 
 <script>
-    const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-    const RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // 寫入 (對應 ESP32)
-    const TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // 接收 (對應 ESP32 通知)
+const SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e',CMD='6e400002-b5a3-f393-e0a9-e50e24dcca9e',STA='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const EMO={S:'✌️',R:'✊',P:'✋','-':'✊'}, NAMES={S:'剪刀',R:'石頭',P:'布'};
+const $=id=>document.getElementById(id);
+let cmdChar=null,dev=null,last=null,prevState='',dirty=false,history=[];
 
-    let myCharacteristic_RX;
+const STATE_TXT={idle:'等待手伸過來…',shake:'剪刀、石頭、…',reveal:'布！',hold:'',wait:'請把手移開'};
 
-    document.getElementById('connectBtn').addEventListener('click', async () => {
-        try {
-            document.getElementById('status').innerText = '狀態：搜尋中...';
-            
-            // 請求藍牙設備連線，過濾名稱必須符合 ESP32 設定的 "ESP32_RPS"
-            const device = await navigator.bluetooth.requestDevice({
-                filters: [{ name: 'ESP32_RPS' }],
-                optionalServices: [SERVICE_UUID]
-            });
-
-            const server = await device.gatt.connect();
-            const service = await server.getPrimaryService(SERVICE_UUID);
-            
-            myCharacteristic_RX = await service.getCharacteristic(RX_UUID);
-            const characteristicTX = await service.getCharacteristic(TX_UUID);
-            
-            // 開啟通知以接收 ESP32 傳來的結果
-            await characteristicTX.startNotifications();
-            characteristicTX.addEventListener('characteristicvaluechanged', handleNotifications);
-
-            document.getElementById('status').innerText = '狀態：🟢 已連接';
-            document.getElementById('status').style.color = '#4CAF50';
-            
-            device.addEventListener('gattserverdisconnected', () => {
-                document.getElementById('status').innerText = '狀態：🔴 已斷線';
-                document.getElementById('status').style.color = 'red';
-            });
-
-        } catch (error) {
-            console.error(error);
-            document.getElementById('status').innerText = '狀態：連線失敗或使用者取消';
-        }
+async function connect(){
+  try{
+    dev=await navigator.bluetooth.requestDevice({filters:[{services:[SVC]}]});
+    dev.addEventListener('gattserverdisconnected',onLost);
+    const s=await (await dev.gatt.connect()).getPrimaryService(SVC);
+    cmdChar=await s.getCharacteristic(CMD);
+    const st=await s.getCharacteristic(STA);
+    await st.startNotifications();
+    st.addEventListener('characteristicvaluechanged',e=>{
+      try{onStatus(JSON.parse(new TextDecoder().decode(e.target.value)))}catch(_){}
     });
+    setConn(true);
+  }catch(err){$('state').textContent='連線失敗：'+err.message}
+}
+function onLost(){cmdChar=null;setConn(false)}
+function setConn(ok){
+  $('conn').className=ok?'on':'';$('connTxt').textContent=ok?'已連線 RPS-Robot':'未連線';
+  $('btnConn').textContent=ok?'中斷':'連接藍芽';
+  if(!ok)$('state').textContent='尚未連線';
+}
+async function send(t){
+  if(!cmdChar){$('state').textContent='請先連接藍芽';return}
+  const d=new TextEncoder().encode(t);
+  try{await (cmdChar.writeValueWithoutResponse?cmdChar.writeValueWithoutResponse(d):cmdChar.writeValue(d))}
+  catch(e){$('state').textContent='傳送失敗：'+e.message}
+}
 
-    // 處理 ESP32 回傳的狀態字串
-    function handleNotifications(event) {
-        let value = new TextDecoder().decode(event.target.value);
-        const handDisplay = document.getElementById('hand-display');
-        const resultText = document.getElementById('result-text');
+function onStatus(s){
+  last=s;
+  const hand=$('hand'),stage=$('stage');
+  $('dist').textContent=s.d>=999?'--':s.d;
+  $('angle').textContent=s.a+'°';
+  $('rounds').textContent=s.n;
+  $('thv').textContent=s.t; if(document.activeElement!==$('th'))$('th').value=s.t;
 
-        if (value === "START") {
-            // ESP32 偵測到手，開始播放搖晃動畫
-            handDisplay.innerText = "✊";
-            handDisplay.classList.add("shake-animation");
-            resultText.innerText = "剪刀、石頭...";
-        } 
-        else if (value.startsWith("RESULT:")) {
-            // ESP32 出拳完畢，停止動畫並顯示結果
-            handDisplay.classList.remove("shake-animation");
-            let angle = parseInt(value.split(":")[1]);
-            
-            if (angle === 0) {
-                handDisplay.innerText = "✌️";
-                resultText.innerText = "出了 剪刀！";
-            } else if (angle === 90) {
-                handDisplay.innerText = "✊";
-                resultText.innerText = "出了 石頭！";
-            } else if (angle === 180) {
-                handDisplay.innerText = "🖐️";
-                resultText.innerText = "出了 布！";
-            }
-        }
-    }
+  if(s.s!==prevState){
+    hand.classList.remove('shake','pop'); void hand.offsetWidth;
+    if(s.s==='shake'){hand.textContent='✊';hand.classList.add('shake');stage.className='card stage'}
+    else if(s.s==='reveal'||s.s==='hold'){
+      hand.textContent=EMO[s.l];
+      if(s.s==='reveal')hand.classList.add('pop');
+      stage.className='card stage '+s.l;
+      if(s.s==='reveal'){history.unshift(s.l);history=history.slice(0,12);$('hist').textContent=history.map(x=>EMO[x]).join(' ')}
+    }else if(s.s==='idle'){hand.textContent='✊';stage.className='card stage'}
+    prevState=s.s;
+  }
+  $('state').textContent=s.s==='hold'?'出拳：'+NAMES[s.l]+' '+EMO[s.l]:STATE_TXT[s.s]||s.s;
 
-    // 將字串指令透過藍牙發送給 ESP32
-    async function sendCommand(cmd) {
-        if (!myCharacteristic_RX) {
-            alert('請先點擊上方按鈕連接藍牙！');
-            return;
-        }
-        let encoder = new TextEncoder();
-        await myCharacteristic_RX.writeValue(encoder.encode(cmd));
-        console.log("已發送指令:", cmd);
-    }
+  const isF=s.m==='F';
+  $('mRandom').classList.toggle('act',!isF);$('mForce').classList.toggle('act',isF);
+  document.querySelectorAll('#pick button').forEach(b=>b.classList.toggle('act',isF&&b.dataset.m===s.f));
+  $('summary').innerHTML=isF?'📌 <b>指定出：'+NAMES[s.f]+' '+EMO[s.f]+'</b>'
+    :'🎲 <b>隨機</b>　✌️ '+s.p[0]+'%　✊ '+s.p[1]+'%　✋ '+s.p[2]+'%';
+  ['b0','b1','b2'].forEach((id,i)=>$(id).style.width=s.p[i]+'%');
+  $('counts').textContent='累計：✌️ '+s.c[0]+'　✊ '+s.c[1]+'　✋ '+s.c[2];
+  if(!dirty)[0,1,2].forEach(i=>{$('p'+i).value=s.p[i];$('v'+i).textContent=s.p[i]});
+}
 
-    // 讀取輸入框數值並組成機率設定指令
-    function setProbabilities() {
-        let s = parseInt(document.getElementById('pS').value);
-        let r = parseInt(document.getElementById('pR').value);
-        let p = parseInt(document.getElementById('pP').value);
-        
-        if (s + r + p !== 100) {
-            alert('剪刀、石頭、布的機率總和必須剛好為 100%！');
-            return;
-        }
-        sendCommand(`PROB:${s},${r},${p}`);
-        alert('機率設定成功，系統已自動切換回隨機模式！');
-    }
+$('btnConn').onclick=()=>dev&&dev.gatt.connected?dev.gatt.disconnect():connect();
+$('mRandom').onclick=()=>send('MODE:RANDOM');
+$('mForce').onclick=()=>send('MODE:FORCE:'+(last&&last.f||'R'));
+document.querySelectorAll('#pick button').forEach(b=>b.onclick=()=>send('MODE:FORCE:'+b.dataset.m));
+[0,1,2].forEach(i=>$('p'+i).oninput=()=>{dirty=true;$('v'+i).textContent=$('p'+i).value});
+$('pApply').onclick=()=>{send('PROB:'+[0,1,2].map(i=>$('p'+i).value).join(','));dirty=false;send('MODE:RANDOM')};
+$('pReset').onclick=()=>{[0,1,2].forEach(i=>{$('p'+i).value=33;$('v'+i).textContent=33});dirty=true};
+$('th').onchange=()=>send('TH:'+$('th').value);
+$('th').oninput=()=>$('thv').textContent=$('th').value;
+$('play').onclick=()=>send('PLAY');
+if(!navigator.bluetooth)$('state').textContent='此瀏覽器不支援 Web Bluetooth，請用 Android Chrome 或 iOS 的 Bluefy';
 </script>
-
 </body>
 </html>

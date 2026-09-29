@@ -1,152 +1,159 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>藍牙猜拳機器人</title>
-  <style>
-    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #e0e5ec; color: #333; text-align: center; margin: 0; padding: 20px; }
-    .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    #animation-box { font-size: 80px; height: 120px; display: flex; align-items: center; justify-content: center; }
-    .shake { animation: shakeAnim 0.4s infinite alternate; }
-    @keyframes shakeAnim {
-      0% { transform: translateY(0) rotate(0deg); }
-      100% { transform: translateY(-30px) rotate(-15deg); }
-    }
-    .status-text { font-size: 20px; font-weight: bold; color: #e74c3c; margin-top: 10px; }
-    .control-group { margin: 15px 0; text-align: left; }
-    label { font-weight: bold; display: block; margin-bottom: 5px; }
-    select, input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; }
-    .hidden { display: none; }
-    button { background: #3498db; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold;}
-    button:active { background: #2980b9; }
-    #ble-btn { background: #2ecc71; margin-bottom: 20px;}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 猜拳機控制後台</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #222; color: white; text-align: center; margin: 0; padding: 20px; }
+        .card { background: #333; padding: 20px; border-radius: 15px; margin: 20px auto; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        button { background: #4CAF50; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; margin: 5px; transition: 0.3s; }
+        button:hover { background: #45a049; }
+        input[type="number"] { width: 60px; padding: 5px; border-radius: 5px; border: none; text-align: center; }
+        hr { border-color: #555; margin: 20px 0; }
+        
+        /* 猜拳動畫區域 */
+        #hand-display { font-size: 80px; margin: 20px 0; display: inline-block; }
+        .shake-animation { animation: shake 0.6s infinite; }
+        
+        @keyframes shake {
+            0% { transform: translateY(0px) rotate(0deg); }
+            25% { transform: translateY(-20px) rotate(-10deg); }
+            50% { transform: translateY(0px) rotate(0deg); }
+            75% { transform: translateY(-20px) rotate(10deg); }
+            100% { transform: translateY(0px) rotate(0deg); }
+        }
+    </style>
 </head>
 <body>
-  <h1>🤖 藍牙猜拳機器人</h1>
-  <button id="ble-btn" onclick="connectBLE()">🔗 點我連接機器人藍牙</button>
 
-  <div class="card">
-    <h2>當前狀態</h2>
-    <div id="animation-box">✊</div>
-    <div id="status-text" class="status-text">尚未連線</div>
-  </div>
-
-  <div class="card">
-    <h2>⚙️ 後台控制</h2>
-    <div class="control-group">
-      <label>模式選擇：</label>
-      <select id="mode" onchange="updateUI()">
-        <option value="0">🎲 正常隨機</option>
-        <option value="1">🎯 指定出拳 (必勝)</option>
-        <option value="2">⚖️ 自訂機率</option>
-      </select>
+    <h1>🤖 ESP32 猜拳機控制面板</h1>
+    
+    <div class="card">
+        <button id="connectBtn">連接藍牙設備</button>
+        <p id="status">狀態：未連接</p>
     </div>
 
-    <div id="fixed-setting" class="control-group hidden">
-      <label>指定出拳：</label>
-      <select id="fixedChoice">
-        <option value="0">✌️ 剪刀</option>
-        <option value="1">✊ 石頭</option>
-        <option value="2">🖐️ 布</option>
-      </select>
+    <div class="card">
+        <h3>當前狀態</h3>
+        <div id="hand-display">✊</div>
+        <h2 id="result-text">等待玩家出拳...</h2>
     </div>
 
-    <div id="prob-setting" class="control-group hidden">
-      <label>剪刀機率 (%)：</label><input type="number" id="probS" value="33">
-      <label>石頭機率 (%)：</label><input type="number" id="probR" value="33">
-      <label>布機率 (%)：</label><input type="number" id="probP" value="34">
+    <div class="card">
+        <h3>後台控制</h3>
+        <p>強制出拳：</p>
+        <button onclick="sendCommand('FORCE:0')">✌️ 必出剪刀</button>
+        <button onclick="sendCommand('FORCE:90')">✊ 必出石頭</button>
+        <button onclick="sendCommand('FORCE:180')">🖐️ 必出布</button>
+        <button onclick="sendCommand('FORCE:-1')" style="background: #2196F3;">🎲 恢復隨機</button>
+
+        <hr>
+        
+        <p>隨機機率設定 (%)：</p>
+        剪刀: <input type="number" id="pS" value="33">
+        石頭: <input type="number" id="pR" value="33">
+        布: <input type="number" id="pP" value="34">
+        <br><br>
+        <button onclick="setProbabilities()" style="background: #FF9800;">設定機率</button>
     </div>
-    
-    <button onclick="saveSettings()">💾 儲存設定同步至機器人</button>
-  </div>
 
-  <script>
-    const serviceUUID = '19b10000-e8f2-537e-4f6c-d104768a1214';
-    const txUUID = '19b10001-e8f2-537e-4f6c-d104768a1214';
-    const rxUUID = '19b10002-e8f2-537e-4f6c-d104768a1214';
-    
-    let rxChar = null;
-    const emojiMap = {0: '✌️', 1: '✊', 2: '🖐️', 255: '✊'};
-    
-    const animBox = document.getElementById('animation-box');
-    const statusText = document.getElementById('status-text');
+<script>
+    const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+    const RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // 寫入 (對應 ESP32)
+    const TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // 接收 (對應 ESP32 通知)
 
-    function updateUI() {
-      let mode = document.getElementById('mode').value;
-      document.getElementById('fixed-setting').className = (mode == 1) ? 'control-group' : 'hidden';
-      document.getElementById('prob-setting').className = (mode == 2) ? 'control-group' : 'hidden';
+    let myCharacteristic_RX;
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+        try {
+            document.getElementById('status').innerText = '狀態：搜尋中...';
+            
+            // 請求藍牙設備連線，過濾名稱必須符合 ESP32 設定的 "ESP32_RPS"
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ name: 'ESP32_RPS' }],
+                optionalServices: [SERVICE_UUID]
+            });
+
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            
+            myCharacteristic_RX = await service.getCharacteristic(RX_UUID);
+            const characteristicTX = await service.getCharacteristic(TX_UUID);
+            
+            // 開啟通知以接收 ESP32 傳來的結果
+            await characteristicTX.startNotifications();
+            characteristicTX.addEventListener('characteristicvaluechanged', handleNotifications);
+
+            document.getElementById('status').innerText = '狀態：🟢 已連接';
+            document.getElementById('status').style.color = '#4CAF50';
+            
+            device.addEventListener('gattserverdisconnected', () => {
+                document.getElementById('status').innerText = '狀態：🔴 已斷線';
+                document.getElementById('status').style.color = 'red';
+            });
+
+        } catch (error) {
+            console.error(error);
+            document.getElementById('status').innerText = '狀態：連線失敗或使用者取消';
+        }
+    });
+
+    // 處理 ESP32 回傳的狀態字串
+    function handleNotifications(event) {
+        let value = new TextDecoder().decode(event.target.value);
+        const handDisplay = document.getElementById('hand-display');
+        const resultText = document.getElementById('result-text');
+
+        if (value === "START") {
+            // ESP32 偵測到手，開始播放搖晃動畫
+            handDisplay.innerText = "✊";
+            handDisplay.classList.add("shake-animation");
+            resultText.innerText = "剪刀、石頭...";
+        } 
+        else if (value.startsWith("RESULT:")) {
+            // ESP32 出拳完畢，停止動畫並顯示結果
+            handDisplay.classList.remove("shake-animation");
+            let angle = parseInt(value.split(":")[1]);
+            
+            if (angle === 0) {
+                handDisplay.innerText = "✌️";
+                resultText.innerText = "出了 剪刀！";
+            } else if (angle === 90) {
+                handDisplay.innerText = "✊";
+                resultText.innerText = "出了 石頭！";
+            } else if (angle === 180) {
+                handDisplay.innerText = "🖐️";
+                resultText.innerText = "出了 布！";
+            }
+        }
     }
 
-    async function connectBLE() {
-      try {
-        statusText.innerText = '尋找裝置中...';
-        const device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: 'ESP32_RPS_Robot' }],
-          optionalServices: [serviceUUID]
-        });
+    // 將字串指令透過藍牙發送給 ESP32
+    async function sendCommand(cmd) {
+        if (!myCharacteristic_RX) {
+            alert('請先點擊上方按鈕連接藍牙！');
+            return;
+        }
+        let encoder = new TextEncoder();
+        await myCharacteristic_RX.writeValue(encoder.encode(cmd));
+        console.log("已發送指令:", cmd);
+    }
 
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(serviceUUID);
+    // 讀取輸入框數值並組成機率設定指令
+    function setProbabilities() {
+        let s = parseInt(document.getElementById('pS').value);
+        let r = parseInt(document.getElementById('pR').value);
+        let p = parseInt(document.getElementById('pP').value);
         
-        const txChar = await service.getCharacteristic(txUUID);
-        rxChar = await service.getCharacteristic(rxUUID);
-
-        await txChar.startNotifications();
-        txChar.addEventListener('characteristicvaluechanged', handleNotify);
-        
-        document.getElementById('ble-btn').innerText = '✅ 藍牙已連線';
-        document.getElementById('ble-btn').style.background = '#27ae60';
-        statusText.innerText = '等待對手中...';
-        
-      } catch (error) {
-        console.error(error);
-        statusText.innerText = '連線失敗或取消';
-      }
+        if (s + r + p !== 100) {
+            alert('剪刀、石頭、布的機率總和必須剛好為 100%！');
+            return;
+        }
+        sendCommand(`PROB:${s},${r},${p}`);
+        alert('機率設定成功，系統已自動切換回隨機模式！');
     }
+</script>
 
-    // 接收 ESP32 傳來的動畫與結果狀態
-    function handleNotify(event) {
-      let value = event.target.value;
-      let state = value.getUint8(0);
-      let result = value.getUint8(1);
-      
-      if(state === 0) {
-        animBox.className = '';
-        animBox.innerText = '✊';
-        statusText.innerText = '等待對手中...';
-      } else if (state === 1) {
-        animBox.className = 'shake';
-        animBox.innerText = '✊';
-        statusText.innerText = '剪刀！石頭！布！...';
-      } else if (state === 2) {
-        animBox.className = '';
-        animBox.innerText = emojiMap[result];
-        statusText.innerText = '開獎結果：' + (result===0?'剪刀':result===1?'石頭':'布');
-      }
-    }
-
-    // 儲存設定並用位元組陣列 (Uint8Array) 寫入 ESP32
-    async function saveSettings() {
-      if(!rxChar) {
-        alert("請先連線藍牙！");
-        return;
-      }
-      let m = parseInt(document.getElementById('mode').value);
-      let f = parseInt(document.getElementById('fixedChoice').value);
-      let ps = parseInt(document.getElementById('probS').value);
-      let pr = parseInt(document.getElementById('probR').value);
-      let pp = parseInt(document.getElementById('probP').value);
-      
-      let payload = new Uint8Array([m, f, ps, pr, pp]);
-      try {
-        await rxChar.writeValue(payload);
-        alert("設定已同步給機器人！");
-      } catch (e) {
-        alert("同步失敗！");
-      }
-    }
-  </script>
 </body>
 </html>

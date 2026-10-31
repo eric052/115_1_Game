@@ -90,7 +90,7 @@ small{color:var(--mute)}
 <div class="card">
   <h2>偵測距離：<span id="thv">20</span> cm</h2>
   <input type="range" id="th" min="5" max="60" value="20">
-  <button id="play" style="width:100%;margin-top:10px">👊 手動出拳</button>
+  <div class="seg" style="margin-top:10px"><button id="play">👊 手動出拳</button><button id="snd">🔊 音效：開</button></div>
 </div>
 
 <script>
@@ -103,7 +103,7 @@ const STATE_TXT={idle:'等待手伸過來…',shake:'剪刀、石頭、…',reve
 
 async function connect(){
   try{
-    dev=await navigator.bluetooth.requestDevice({filters:[{services:[SVC]}]});
+    dev=await navigator.bluetooth.requestDevice({filters:[{services:[SVC]},{namePrefix:'RPS'}],optionalServices:[SVC]});
     dev.addEventListener('gattserverdisconnected',onLost);
     const s=await (await dev.gatt.connect()).getPrimaryService(SVC);
     cmdChar=await s.getCharacteristic(CMD);
@@ -134,6 +134,7 @@ function onStatus(s){
   $('dist').textContent=s.d>=999?'--':s.d;
   $('angle').textContent=s.a+'°';
   $('rounds').textContent=s.n;
+  $('snd').textContent=s.z?'🔊 音效：開':'🔇 音效：關';
   $('thv').textContent=s.t; if(document.activeElement!==$('th'))$('th').value=s.t;
 
   if(s.s!==prevState){
@@ -169,6 +170,7 @@ $('pReset').onclick=()=>{[0,1,2].forEach(i=>{$('p'+i).value=33;$('v'+i).textCont
 $('th').onchange=()=>send('TH:'+$('th').value);
 $('th').oninput=()=>$('thv').textContent=$('th').value;
 $('play').onclick=()=>send('PLAY');
+$('snd').onclick=()=>send('SOUND:'+(last&&last.z?0:1));
 if(!navigator.bluetooth)$('state').textContent='此瀏覽器不支援 Web Bluetooth，請用 Android Chrome 或 iOS 的 Bluefy';
 </script>
 </body>

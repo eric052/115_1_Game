@@ -41,6 +41,21 @@ input[type=range]{width:100%}
 .bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:8px;background:var(--line)}
 .bar i{display:block;transition:width .4s}
 small{color:var(--mute)}
+.row2{display:grid;grid-template-columns:44px 1fr 56px;gap:8px;align-items:center;margin:8px 0}
+.row2 b{text-align:right}
+#ckt{width:100%;height:auto;display:block}
+#ckt text{fill:var(--ink);font-size:11px;font-family:inherit}
+#ckt .mute{fill:var(--mute)}
+#ckt .box{fill:var(--bg);stroke:var(--ink);stroke-width:2}
+#ckt .wire{stroke:var(--line);stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+#ckt .cur{stroke-width:4;fill:none;stroke-linecap:round;stroke-dasharray:3 9;opacity:0}
+#ckt .cur.on{opacity:1;animation:flow .45s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-12}}
+#ckt .part{fill:var(--card);stroke:var(--ink);stroke-width:2}
+#ckt .led{stroke:var(--ink);stroke-width:2;transition:fill .08s}
+#ckt .glow{opacity:0;transition:opacity .08s}
+#cktTxt{font-size:14px;min-height:42px;margin-top:6px}
+@media (prefers-reduced-motion:reduce){#ckt .cur.on{animation:none}}
 </style>
 </head>
 <body>
@@ -93,12 +108,78 @@ small{color:var(--mute)}
   <div class="seg" style="margin-top:10px"><button id="play">👊 手動出拳</button><button id="snd">🔊 音效：開</button></div>
 </div>
 
+<div class="card">
+  <h2>🔊 蜂鳴器聲音</h2>
+  <div class="row2"><span>音量</span><input type="range" id="vol" min="0" max="100" value="100" aria-label="音量"><b id="volv">100</b></div>
+  <div class="row2"><span>音高</span><input type="range" id="pit" min="50" max="200" value="100" aria-label="音高"><b id="pitv">100%</b></div>
+  <div class="seg"><button id="sndTest">▶ 試聽</button><button id="sndReset">還原預設</button></div>
+  <small>音量越小，蜂鳴器的脈衝越窄，聲音就越小；音高 100% 是原本的聲音。調整後會自動存在機器人裡，斷電也記得。</small>
+</div>
+
+<div class="card">
+  <h2>💡 燈的電路（即時）</h2>
+  <svg id="ckt" viewBox="0 0 360 312" role="img" aria-label="三顆燈的電路圖，亮起時有電流流動"></svg>
+  <div id="cktTxt">等待連線…</div>
+  <div class="seg" style="margin-top:8px"><button id="demo">▶ 示範倒數（不用連線）</button><button id="cktOff">全部熄滅</button></div>
+  <small>電流從 ESP32 的腳位出發，經過 220Ω 電阻限流、流過 LED，最後回到 GND（接地），LED 就亮了。</small>
+</div>
+
 <script>
 const SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e',CMD='6e400002-b5a3-f393-e0a9-e50e24dcca9e',STA='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const EMO={S:'✌️',R:'✊',P:'✋','-':'✊'}, NAMES={S:'剪刀',R:'石頭',P:'布'};
 const $=id=>document.getElementById(id);
 let cmdChar=null,dev=null,last=null,prevState='',dirty=false,history=[];
 
+const LEDS=[{n:'紅燈',pin:'GPIO26',c:'#e8505b',vf:2.0},{n:'黃燈',pin:'GPIO27',c:'#f2b705',vf:2.1},{n:'綠燈',pin:'GPIO14',c:'#2fbf71',vf:2.2}];
+const NS='http://www.w3.org/2000/svg',R_OHM=220,VCC=3.3;
+function el(tag,attrs,parent,txt){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(txt!==undefined)e.textContent=txt;if(parent)parent.appendChild(e);return e}
+const ck=[];
+function buildCircuit(){
+  const svg=$('ckt');svg.textContent='';
+  const defs=el('defs',{},svg);const f=el('filter',{id:'blur',x:'-50%',y:'-50%',width:'200%',height:'200%'},defs);el('feGaussianBlur',{stdDeviation:'7'},f);
+  el('rect',{x:6,y:12,width:80,height:262,rx:10,class:'box'},svg);el('text',{x:46,y:32,'text-anchor':'middle','font-weight':'700'},svg,'ESP32');
+  const gy=268;el('path',{d:'M300 60V'+gy,class:'wire'},svg);
+  el('path',{d:'M300 60V'+gy,class:'cur',id:'busCur',stroke:'#888'},svg);
+  [[28,2],[18,8],[8,14]].forEach(([w,dy])=>el('line',{x1:300-w/2,y1:gy+dy,x2:300+w/2,y2:gy+dy,stroke:'currentColor','stroke-width':2},svg));
+  el('text',{x:300,y:gy+32,'text-anchor':'middle',class:'mute'},svg,'GND（0V）');
+  LEDS.forEach((L,i)=>{
+    const y=70+i*80,o={};ck.push(o);
+    el('text',{x:82,y:y-7,'text-anchor':'end',class:'mute'},svg,L.pin);
+    el('path',{d:`M86 ${y}H124`,class:'wire'},svg);el('path',{d:`M170 ${y}H212`,class:'wire'},svg);el('path',{d:`M240 ${y}H300`,class:'wire'},svg);
+    o.cur=[el('path',{d:`M86 ${y}H124`,class:'cur',stroke:L.c},svg),el('path',{d:`M170 ${y}H212`,class:'cur',stroke:L.c},svg),el('path',{d:`M240 ${y}H300`,class:'cur',stroke:L.c},svg)];
+    el('rect',{x:124,y:y-10,width:46,height:20,rx:3,class:'part'},svg);el('text',{x:147,y:y+4,'text-anchor':'middle'},svg,'220Ω');
+    o.glow=el('circle',{cx:226,cy:y,r:24,fill:L.c,class:'glow',filter:'url(#blur)'},svg);
+    o.tri=el('path',{d:`M212 ${y-15}L240 ${y}L212 ${y+15}Z`,class:'led',fill:'#d5dae6'},svg);
+    el('line',{x1:240,y1:y-15,x2:240,y2:y+15,stroke:'currentColor','stroke-width':3},svg);
+    o.v1=el('text',{x:108,y:y+16,'text-anchor':'middle',class:'mute'},svg,'0V');
+    o.v2=el('text',{x:191,y:y+22,'text-anchor':'middle',class:'mute'},svg,'0V');
+    o.v3=el('text',{x:270,y:y+16,'text-anchor':'middle',class:'mute'},svg,'0V');
+    el('text',{x:226,y:y-24,'text-anchor':'middle','font-weight':'700'},svg,L.n+' '+(i+1));
+    o.i=el('text',{x:147,y:y-18,'text-anchor':'middle'},svg,'');
+  });
+}
+let lastE=-1,lastU=-1,demoT=null;
+function updateCircuit(mask,duty){
+  if(mask===lastE&&duty===lastU)return;lastE=mask;lastU=duty;
+  const br=Math.round(duty/255*100);let on=[];
+  LEDS.forEach((L,i)=>{
+    const o=ck[i],a=(mask>>i)&1,I=(VCC-L.vf)/R_OHM*1000;
+    o.cur.forEach(p=>p.classList.toggle('on',!!a));
+    o.tri.setAttribute('fill',a?L.c:'#d5dae6');o.glow.style.opacity=a?(0.25+0.55*duty/255):0;
+    o.v1.textContent=a?'3.3V':'0V';o.v2.textContent=a?L.vf.toFixed(1)+'V':'0V';o.v3.textContent='0V';
+    o.i.textContent=a?'電流 ≈ '+I.toFixed(1)+' mA':'';
+    if(a)on.push({L,I});
+  });
+  $('busCur').classList.toggle('on',mask!==0);
+  const t=$('cktTxt');
+  if(!on.length)t.textContent='三顆燈都熄滅：腳位輸出 0V，沒有電流。';
+  else t.innerHTML=on.map(x=>'<b>'+x.L.n+'</b>亮：'+x.L.pin+' 輸出 3.3V → 220Ω 電阻 → LED → GND，電流約 <b>'+x.I.toFixed(1)+' mA</b>，亮度 '+br+'%').join('<br>');
+}
+function demoCountdown(){
+  clearInterval(demoT);let k=0;const seq=[1,2,4,0];
+  const step=()=>{updateCircuit(seq[k],255);k++;if(k>=seq.length){clearInterval(demoT);demoT=null}};
+  step();demoT=setInterval(step,900);
+}
 const STATE_TXT={idle:'等待手伸過來…',shake:'剪刀、石頭、…',reveal:'布！',hold:'',wait:'請把手移開'};
 
 async function connect(){
@@ -136,6 +217,9 @@ function onStatus(s){
   $('rounds').textContent=s.n;
   $('snd').textContent=s.z?'🔊 音效：開':'🔇 音效：關';
   $('thv').textContent=s.t; if(document.activeElement!==$('th'))$('th').value=s.t;
+  if(typeof s.e==='number'){if(demoT){clearInterval(demoT);demoT=null}updateCircuit(s.e,typeof s.u==='number'?s.u:255)}
+  if(typeof s.v==='number'&&document.activeElement!==$('vol')){$('vol').value=s.v;$('volv').textContent=s.v}
+  if(typeof s.h==='number'&&document.activeElement!==$('pit')){$('pit').value=s.h;$('pitv').textContent=s.h+'%'}
 
   if(s.s!==prevState){
     hand.classList.remove('shake','pop'); void hand.offsetWidth;
@@ -170,6 +254,16 @@ $('pReset').onclick=()=>{[0,1,2].forEach(i=>{$('p'+i).value=33;$('v'+i).textCont
 $('th').onchange=()=>send('TH:'+$('th').value);
 $('th').oninput=()=>$('thv').textContent=$('th').value;
 $('play').onclick=()=>send('PLAY');
+let tVol=0,tPit=0;
+$('vol').oninput=()=>{$('volv').textContent=$('vol').value;const n=Date.now();if(n-tVol>90){tVol=n;send('VOL:'+$('vol').value)}};
+$('vol').onchange=()=>send('VOL:'+$('vol').value);
+$('pit').oninput=()=>{$('pitv').textContent=$('pit').value+'%';const n=Date.now();if(n-tPit>90){tPit=n;send('PITCH:'+$('pit').value)}};
+$('pit').onchange=()=>send('PITCH:'+$('pit').value);
+$('sndTest').onclick=()=>send('SNDTEST');
+$('sndReset').onclick=()=>{$('vol').value=100;$('volv').textContent=100;$('pit').value=100;$('pitv').textContent='100%';send('VOL:100');setTimeout(()=>send('PITCH:100'),120)};
+$('demo').onclick=demoCountdown;
+$('cktOff').onclick=()=>{if(demoT){clearInterval(demoT);demoT=null}updateCircuit(0,255)};
+buildCircuit();updateCircuit(0,255);
 $('snd').onclick=()=>send('SOUND:'+(last&&last.z?0:1));
 if(!navigator.bluetooth)$('state').textContent='此瀏覽器不支援 Web Bluetooth，請用 Android Chrome 或 iOS 的 Bluefy';
 </script>
